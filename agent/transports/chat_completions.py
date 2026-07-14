@@ -13,6 +13,7 @@ import copy
 from typing import Any, Dict, List, Optional
 
 from agent.lmstudio_reasoning import resolve_lmstudio_effort
+from hermes_constants import parse_reasoning_effort
 from agent.moonshot_schema import is_moonshot_model, sanitize_moonshot_tools
 from agent.prompt_builder import DEVELOPER_ROLE_MODELS
 from agent.transports.base import ProviderTransport
@@ -80,14 +81,38 @@ def _snake_case_gemini_thinking_config(config: dict | None) -> dict | None:
     if not isinstance(config, dict) or not config:
         return None
 
-    translated: Dict[str, Any] = {}
-    if isinstance(config.get("includeThoughts"), bool):
-        translated["include_thoughts"] = config["includeThoughts"]
-    if isinstance(config.get("thinkingLevel"), str) and config["thinkingLevel"].strip():
-        translated["thinking_level"] = config["thinkingLevel"].strip().lower()
-    if isinstance(config.get("thinkingBudget"), (int, float)):
-        translated["thinking_budget"] = int(config["thinkingBudget"])
-    return translated or None
+    converted: Dict[str, Any] = {}
+    if "includeThoughts" in config:
+        converted["include_thoughts"] = config["includeThoughts"]
+    if "thinkingLevel" in config:
+        converted["thinking_level"] = config["thinkingLevel"]
+    if "thinkingBudget" in config:
+        converted["thinking_budget"] = config["thinkingBudget"]
+    return converted or None
+
+
+def _extract_request_defaults(request_overrides: dict | None) -> dict[str, Any]:
+    """Pull provider-scoped request defaults out of custom-provider overrides."""
+    if not isinstance(request_overrides, dict):
+        return {}
+
+    raw_defaults = request_overrides.get("request_defaults")
+    if not isinstance(raw_defaults, dict):
+        return {}
+
+    defaults: dict[str, Any] = {}
+
+    max_tokens = raw_defaults.get("max_tokens")
+    if isinstance(max_tokens, int) and max_tokens > 0:
+        defaults["max_tokens"] = max_tokens
+
+    reasoning_effort = raw_defaults.get("reasoning_effort")
+    if isinstance(reasoning_effort, str) and reasoning_effort.strip():
+        parsed = parse_reasoning_effort(reasoning_effort)
+        if parsed and parsed.get("enabled") and parsed.get("effort"):
+            defaults["reasoning_effort"] = parsed["effort"]
+
+    return defaults
 
 
 def _is_gemini_openai_compat_base_url(base_url: Any) -> bool:
@@ -260,6 +285,9 @@ class ChatCompletionsTransport(ProviderTransport):
         is_kimi = params.get("is_kimi", False)
         is_tokenhub = params.get("is_tokenhub", False)
         reasoning_config = params.get("reasoning_config")
+        request_defaults = _extract_request_defaults(params.get("request_overrides")) if params.get("is_custom_provider", False) else {}
+        request_default_max_tokens = request_defaults.get("max_tokens")
+        request_default_reasoning_effort = request_defaults.get("reasoning_effort")
 
         if ephemeral is not None and max_tokens_fn:
             api_kwargs.update(max_tokens_fn(ephemeral))

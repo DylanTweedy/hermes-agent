@@ -291,7 +291,7 @@ def get_container_exec_info() -> Optional[dict]:
 # =============================================================================
 
 # Re-export from hermes_constants — canonical definition lives there.
-from hermes_constants import get_hermes_home  # noqa: F811,E402
+from hermes_constants import get_hermes_home, parse_reasoning_effort  # noqa: F811,E402
 from utils import atomic_replace
 
 def get_config_path() -> Path:
@@ -2920,6 +2920,75 @@ def _normalize_custom_provider_entry(
     rate_limit_delay = entry.get("rate_limit_delay")
     if isinstance(rate_limit_delay, (int, float)) and rate_limit_delay >= 0:
         normalized["rate_limit_delay"] = rate_limit_delay
+
+    def _normalize_request_defaults(raw_defaults: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(raw_defaults, dict):
+            return None
+
+        normalized_defaults: Dict[str, Any] = {}
+        unexpected = set(raw_defaults.keys()) - {"max_tokens", "reasoning_effort"}
+        if unexpected:
+            logger.warning(
+                "providers.%s: request_defaults ignored unknown keys: %s",
+                provider_key or "?", ", ".join(sorted(unexpected)),
+            )
+
+        max_tokens = raw_defaults.get("max_tokens")
+        if isinstance(max_tokens, int) and max_tokens > 0:
+            normalized_defaults["max_tokens"] = max_tokens
+        elif max_tokens is not None:
+            logger.warning(
+                "providers.%s: request_defaults.max_tokens must be a positive integer — skipped",
+                provider_key or "?",
+            )
+
+        reasoning_effort = raw_defaults.get("reasoning_effort")
+        if isinstance(reasoning_effort, str) and reasoning_effort.strip():
+            parsed_effort = parse_reasoning_effort(reasoning_effort)
+            if parsed_effort and parsed_effort.get("enabled") and parsed_effort.get("effort"):
+                normalized_defaults["reasoning_effort"] = parsed_effort["effort"]
+            else:
+                logger.warning(
+                    "providers.%s: request_defaults.reasoning_effort %r is not a valid effort level — skipped",
+                    provider_key or "?", reasoning_effort,
+                )
+        elif reasoning_effort is not None:
+            logger.warning(
+                "providers.%s: request_defaults.reasoning_effort must be a string — skipped",
+                provider_key or "?",
+            )
+
+        return normalized_defaults or None
+
+    request_overrides = entry.get("request_overrides")
+    if isinstance(request_overrides, dict) and request_overrides:
+        normalized_overrides = dict(request_overrides)
+        if "requestDefaults" in normalized_overrides and "request_defaults" not in normalized_overrides:
+            logger.warning(
+                "providers.%s: camelCase key 'requestDefaults' auto-mapped to 'request_defaults' (use snake_case to avoid this warning)",
+                provider_key or "?",
+            )
+            normalized_overrides["request_defaults"] = normalized_overrides.pop("requestDefaults")
+
+        if "max_tokens" in normalized_overrides or "reasoning_effort" in normalized_overrides:
+            request_defaults: Dict[str, Any] = {}
+            if "max_tokens" in normalized_overrides:
+                request_defaults["max_tokens"] = normalized_overrides.pop("max_tokens")
+            if "reasoning_effort" in normalized_overrides:
+                request_defaults["reasoning_effort"] = normalized_overrides.pop("reasoning_effort")
+            if request_defaults:
+                normalized_overrides.setdefault("request_defaults", {}).update(request_defaults)
+
+        raw_request_defaults = normalized_overrides.get("request_defaults")
+        if raw_request_defaults is not None:
+            normalized_request_defaults = _normalize_request_defaults(raw_request_defaults)
+            if normalized_request_defaults:
+                normalized_overrides["request_defaults"] = normalized_request_defaults
+            else:
+                normalized_overrides.pop("request_defaults", None)
+
+        if normalized_overrides:
+            normalized["request_overrides"] = normalized_overrides
 
     return normalized
 

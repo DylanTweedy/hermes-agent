@@ -403,12 +403,14 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
                 # Found match by provider key
                 base_url = entry.get("api") or entry.get("url") or entry.get("base_url") or ""
                 if base_url:
-                    result = {
+                    result: Dict[str, Any] = {
                         "name": entry.get("name", ep_name),
                         "base_url": base_url.strip(),
                         "api_key": resolved_api_key,
                         "model": entry.get("default_model", ""),
                     }
+                    if isinstance(entry.get("request_overrides"), dict) and entry.get("request_overrides"):
+                        result["request_overrides"] = dict(entry["request_overrides"])
                     # The v11→v12 migration writes the API mode under the new
                     # ``transport`` field, but hand-edited configs may still
                     # use the legacy ``api_mode`` spelling.  Accept both —
@@ -428,12 +430,14 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
                     # Found match by display name
                     base_url = entry.get("api") or entry.get("url") or entry.get("base_url") or ""
                     if base_url:
-                        result = {
+                        result: Dict[str, Any] = {
                             "name": display_name,
                             "base_url": base_url.strip(),
                             "api_key": resolved_api_key,
                             "model": entry.get("default_model", ""),
                         }
+                        if isinstance(entry.get("request_overrides"), dict) and entry.get("request_overrides"):
+                            result["request_overrides"] = dict(entry["request_overrides"])
                         api_mode = _parse_api_mode(entry.get("api_mode") or entry.get("transport"))
                         if api_mode:
                             result["api_mode"] = api_mode
@@ -472,6 +476,9 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
             "base_url": base_url.strip(),
             "api_key": str(entry.get("api_key", "") or "").strip(),
         }
+        request_overrides = entry.get("request_overrides")
+        if isinstance(request_overrides, dict) and request_overrides:
+            result["request_overrides"] = dict(request_overrides)
         key_env = str(entry.get("key_env", "") or "").strip()
         if key_env:
             result["key_env"] = key_env
