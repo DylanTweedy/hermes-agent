@@ -46,6 +46,58 @@ class TestChatCompletionsBasic:
         assert "codex_reasoning_items" in msgs[0]
         assert "codex_message_items" in msgs[0]
 
+    def test_convert_messages_strips_tool_name(self, transport):
+        """Internal `tool_name` (used for FTS indexing in the SQLite store) is
+        not part of the OpenAI Chat Completions schema. Strict providers like
+        Moonshot/Kimi reject it with HTTP 400 'Extra inputs are not permitted'.
+        """
+        msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": None,
+             "tool_calls": [{"id": "call_1", "type": "function",
+                             "function": {"name": "execute_code", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "call_1", "tool_name": "execute_code",
+             "content": "result"},
+        ]
+        result = transport.convert_messages(msgs)
+        assert "tool_name" not in result[2]
+        assert result[2]["content"] == "result"
+        assert result[2]["tool_call_id"] == "call_1"
+        # Original list untouched (deepcopy-on-demand)
+        assert msgs[2]["tool_name"] == "execute_code"
+
+    def test_convert_messages_strips_internal_scaffolding_markers(self, transport):
+        """Hermes-internal ``_``-prefixed markers must never reach the wire.
+
+        The empty-response recovery path appends synthetic messages tagged
+        with ``_empty_recovery_synthetic``; permissive providers ignore the
+        unknown key, but strict gateways (opencode-go, codex.nekos.me)
+        reject the request, poisoning every later turn in the session.
+        """
+        msgs = [
+            {"role": "user", "content": "run the task"},
+            {"role": "assistant", "content": "(empty)", "_empty_recovery_synthetic": True},
+            {"role": "user", "content": "continue", "_empty_recovery_synthetic": True},
+            {"role": "assistant", "content": "done", "_thinking_prefill": True,
+             "_empty_terminal_sentinel": True},
+        ]
+        result = transport.convert_messages(msgs)
+        for m in result:
+            assert not any(k.startswith("_") for k in m), m
+        # Visible content preserved
+        assert result[1]["content"] == "(empty)"
+        assert result[2]["content"] == "continue"
+        # Original list untouched (deepcopy-on-demand)
+        assert msgs[1]["_empty_recovery_synthetic"] is True
+
+    def test_convert_messages_clean_list_is_identity(self, transport):
+        """A list with no internal/codex keys is returned as-is (no copy)."""
+        msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        assert transport.convert_messages(msgs) is msgs
+
 
 class TestChatCompletionsBuildKwargs:
 
@@ -55,6 +107,39 @@ class TestChatCompletionsBuildKwargs:
         assert kw["model"] == "gpt-4o"
         assert kw["messages"][0]["content"] == "Hello"
         assert kw["timeout"] == 30.0
+
+    def test_custom_provider_request_defaults(self, transport):
+        msgs = [{"role": "user", "content": "Hello"}]
+        kw = transport.build_kwargs(
+            model="gpt-oss:20b",
+            messages=msgs,
+            is_custom_provider=True,
+            max_tokens_param_fn=lambda n: {"max_tokens": n},
+            request_overrides={
+                "max_tokens": 256,
+                "reasoning_effort": "low",
+            },
+        )
+        assert kw["max_tokens"] == 256
+        assert kw["reasoning_effort"] == "low"
+        assert "request_defaults" not in kw
+
+    def test_custom_provider_request_defaults_explicit_values_win(self, transport):
+        msgs = [{"role": "user", "content": "Hello"}]
+        kw = transport.build_kwargs(
+            model="gpt-oss:20b",
+            messages=msgs,
+            is_custom_provider=True,
+            max_tokens=64,
+            max_tokens_param_fn=lambda n: {"max_tokens": n},
+            reasoning_config={"enabled": True, "effort": "high"},
+            request_overrides={
+                "max_tokens": 256,
+                "reasoning_effort": "low",
+            },
+        )
+        assert kw["max_tokens"] == 64
+        assert kw["reasoning_effort"] == "high"
 
     def test_developer_role_swap(self, transport):
         msgs = [{"role": "system", "content": "You are helpful"}, {"role": "user", "content": "Hi"}]

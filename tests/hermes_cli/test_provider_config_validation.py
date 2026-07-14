@@ -5,9 +5,7 @@ accepted as base_url, and unknown keys go unreported.
 """
 
 import logging
-from unittest.mock import patch
 
-import pytest
 
 from hermes_cli.config import _normalize_custom_provider_entry
 
@@ -46,6 +44,24 @@ class TestNormalizeCustomProviderEntry:
         result = _normalize_custom_provider_entry(entry, provider_key="myhost")
         assert result is not None
         assert result["base_url"] == "https://api.example.com/v1"
+
+    def test_request_overrides_normalized(self):
+        """request_overrides should normalize and keep only supported keys."""
+        entry = {
+            "base_url": "https://api.example.com/v1",
+            "api_key": "***",
+            "requestOverrides": {
+                "max_tokens": 4096,
+                "reasoning_effort": "low",
+                "ignored": True,
+            },
+        }
+        result = _normalize_custom_provider_entry(entry, provider_key="ollama-atlas")
+        assert result is not None
+        assert result["request_overrides"] == {
+            "max_tokens": 4096,
+            "reasoning_effort": "low",
+        }
 
     def test_non_url_api_field_rejected(self):
         """Non-URL string in 'api' field should be skipped with a warning."""
