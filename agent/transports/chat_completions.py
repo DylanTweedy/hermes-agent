@@ -293,6 +293,8 @@ class ChatCompletionsTransport(ProviderTransport):
             api_kwargs.update(max_tokens_fn(ephemeral))
         elif max_tokens is not None and max_tokens_fn:
             api_kwargs.update(max_tokens_fn(max_tokens))
+        elif request_default_max_tokens is not None and max_tokens_fn:
+            api_kwargs.update(max_tokens_fn(request_default_max_tokens))
         elif anthropic_max_out is not None:
             api_kwargs["max_tokens"] = anthropic_max_out
 
@@ -337,6 +339,9 @@ class ChatCompletionsTransport(ProviderTransport):
             )
             if _lm_effort is not None:
                 api_kwargs["reasoning_effort"] = _lm_effort
+
+        if request_default_reasoning_effort and "reasoning_effort" not in api_kwargs:
+            api_kwargs["reasoning_effort"] = request_default_reasoning_effort
 
         # extra_body assembly
         extra_body: dict[str, Any] = {}

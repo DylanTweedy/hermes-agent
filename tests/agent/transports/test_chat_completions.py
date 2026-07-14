@@ -423,6 +423,41 @@ class TestChatCompletionsBuildKwargs:
         )
         assert kw["service_tier"] == "priority"
 
+    def test_custom_provider_request_defaults_apply(self, transport):
+        msgs = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="custom-model", messages=msgs,
+            is_custom_provider=True,
+            request_overrides={
+                "request_defaults": {
+                    "max_tokens": 2048,
+                    "reasoning_effort": "high",
+                },
+            },
+            max_tokens_param_fn=lambda n: {"max_tokens": n},
+        )
+        assert kw["max_tokens"] == 2048
+        assert kw["reasoning_effort"] == "high"
+
+    def test_custom_provider_request_overrides_still_win(self, transport):
+        msgs = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="custom-model", messages=msgs,
+            is_custom_provider=True,
+            max_tokens=4096,
+            request_overrides={
+                "request_defaults": {
+                    "max_tokens": 2048,
+                    "reasoning_effort": "low",
+                },
+                "max_tokens": 8192,
+                "reasoning_effort": "medium",
+            },
+            max_tokens_param_fn=lambda n: {"max_tokens": n},
+        )
+        assert kw["max_tokens"] == 8192
+        assert kw["reasoning_effort"] == "medium"
+
     def test_fixed_temperature(self, transport):
         """Fixed temperature is now set via ProviderProfile.fixed_temperature."""
         from providers.base import ProviderProfile
