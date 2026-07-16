@@ -1225,6 +1225,7 @@ def test_named_custom_provider_wins_over_builtin_alias(monkeypatch):
     assert entry["api_key"] == "my-kimi-key"
 
 
+
 def test_named_custom_provider_skipped_for_canonical_built_in(monkeypatch):
     """Companion to the test above: ``nous`` is a canonical provider name
     (``resolve_provider('nous') == 'nous'``), so a custom entry with that name
@@ -2048,6 +2049,7 @@ def test_named_custom_runtime_propagates_extra_body_direct_path(monkeypatch):
             "base_url": "http://localhost:8000/v1",
             "api_key": "test-key",
             "model": "google/gemma-4-31b-it",
+            "max_output_tokens": 4096,
             "extra_body": {
                 "enable_thinking": True,
                 "reasoning_effort": "high",
@@ -2057,6 +2059,7 @@ def test_named_custom_runtime_propagates_extra_body_direct_path(monkeypatch):
     monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
 
     resolved = rp.resolve_runtime_provider(requested="my-gemma")
+    assert resolved["max_output_tokens"] == 4096
     assert resolved["request_overrides"] == {
         "extra_body": {
             "enable_thinking": True,
@@ -3400,6 +3403,8 @@ def test_resolve_named_custom_runtime_pool_result_includes_extra_headers(monkeyp
             "name": "lmstudio",
             "base_url": "https://lmstudio.example.com/v1",
             "api_key": "not-used-when-pooled",
+            "max_output_tokens": 4096,
+            "extra_body": {"reasoning_effort": "low"},
             "extra_headers": {
                 "CF-Access-Client-Id": "xxx.access",
                 "CF-Access-Client-Secret": "yyy",
@@ -3413,6 +3418,10 @@ def test_resolve_named_custom_runtime_pool_result_includes_extra_headers(monkeyp
     assert resolved["extra_headers"] == {
         "CF-Access-Client-Id": "xxx.access",
         "CF-Access-Client-Secret": "yyy",
+    }
+    assert resolved["max_output_tokens"] == 4096
+    assert resolved["request_overrides"] == {
+        "extra_body": {"reasoning_effort": "low"}
     }
     assert resolved["api_key"] == "pooled-key"
     assert resolved["source"] == "pool:lmstudio-pool"

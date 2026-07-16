@@ -172,6 +172,82 @@ class TestNormalizeCustomProviderEntry:
         assert result is not None
         assert result["api_key"] == "snake-key"
 
+    def test_max_output_tokens_is_retained_canonically(self):
+        entry = {
+            "name": "test-provider",
+            "base_url": "https://api.example.com/v1",
+            "max_output_tokens": 4096,
+        }
+        result = _normalize_custom_provider_entry(entry, provider_key="test")
+        assert result is not None
+        assert result["max_output_tokens"] == 4096
+
+    @pytest.mark.parametrize(
+        "field_name, value",
+        [
+            ("max_tokens", 2048),
+            ("maxOutputTokens", 3072),
+            ("maxTokens", 5120),
+        ],
+    )
+    def test_output_cap_aliases_normalize_to_max_output_tokens(
+        self,
+        field_name,
+        value,
+    ):
+        entry = {
+            "name": "test-provider",
+            "base_url": "https://api.example.com/v1",
+            field_name: value,
+        }
+        result = _normalize_custom_provider_entry(entry, provider_key="test")
+        assert result is not None
+        assert result["max_output_tokens"] == value
+
+    def test_canonical_max_output_tokens_wins_over_aliases(self):
+        entry = {
+            "name": "test-provider",
+            "base_url": "https://api.example.com/v1",
+            "max_output_tokens": 4096,
+            "max_tokens": 2048,
+            "maxOutputTokens": 3072,
+            "maxTokens": 5120,
+        }
+        result = _normalize_custom_provider_entry(entry, provider_key="test")
+        assert result is not None
+        assert result["max_output_tokens"] == 4096
+
+    def test_invalid_output_cap_values_are_omitted(self):
+        for extra in (
+            {"max_output_tokens": 0},
+            {"max_output_tokens": -1},
+            {"max_output_tokens": "4096"},
+            {"max_tokens": 0},
+            {"maxOutputTokens": -1},
+            {"maxTokens": "4096"},
+            {},
+        ):
+            entry = {
+                "name": "test-provider",
+                "base_url": "https://api.example.com/v1",
+                **extra,
+            }
+            result = _normalize_custom_provider_entry(entry, provider_key="test")
+            assert result is not None
+            assert "max_output_tokens" not in result
+
+    def test_extra_body_reasoning_effort_is_preserved_with_output_cap(self):
+        entry = {
+            "name": "test-provider",
+            "base_url": "https://api.example.com/v1",
+            "max_output_tokens": 4096,
+            "extra_body": {"reasoning_effort": "low"},
+        }
+        result = _normalize_custom_provider_entry(entry, provider_key="test")
+        assert result is not None
+        assert result["max_output_tokens"] == 4096
+        assert result["extra_body"] == {"reasoning_effort": "low"}
+
     def test_non_dict_returns_none(self):
         """Non-dict entry should return None."""
         assert _normalize_custom_provider_entry("not-a-dict") is None
