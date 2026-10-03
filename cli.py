@@ -46,12 +46,12 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Suppress startup messages for clean CLI experience
 os.environ["HERMES_QUIET"] = "1"  # Our own modules
 
 import yaml
 
 from hermes_cli.fallback_config import get_fallback_chain
+from hermes_cli.session_ids import new_cli_session_id
 from hermes_cli.cli_agent_setup_mixin import CLIAgentSetupMixin
 from hermes_cli.cli_commands_mixin import CLICommandsMixin
 
@@ -4024,9 +4024,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self.session_id = resume
             self._resumed = True
         else:
-            timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
-            short_uuid = uuid.uuid4().hex[:6]
-            self.session_id = f"{timestamp_str}_{short_uuid}"
+            self.session_id = new_cli_session_id(self.session_start)
         
         # History file for persistent input recall across sessions
         self._history_file = _hermes_home / ".hermes_history"
@@ -7062,9 +7060,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._discard_session_if_empty(old_session_id)
 
         self.session_start = datetime.now()
-        timestamp_str = self.session_start.strftime("%Y%m%d_%H%M%S")
-        short_uuid = uuid.uuid4().hex[:6]
-        self.session_id = f"{timestamp_str}_{short_uuid}"
+        self.session_id = new_cli_session_id(self.session_start)
         self.conversation_history = []
         self._pending_title = None
         self._resumed = False
